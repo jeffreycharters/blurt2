@@ -10,4 +10,22 @@ declare global {
 	}
 }
 
-export {};
+export type User = {
+	id: Uuid
+	username: string
+	createdAt: Date
+}
+
+export type Blurt = {
+	id: Uuid
+	user: Uuid
+	created: Date
+	content: string
+	liks: User[]
+}
+
+export type Lik = {
+	user: Uuid
+	blurt: Uuid
+	created: Date
+}
