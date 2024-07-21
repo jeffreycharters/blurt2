@@ -1,62 +1,97 @@
 <script lang="ts">
-	import { onDestroy, onMount } from "svelte"
-	import { page } from "$app/stores"
+	import { onMount } from "svelte"
 
-	import { Blurt, Loader, Processing } from "$lib/c"
+	import type { Blurt as BlurtType } from "../../app"
+	import Blurt from "$lib/c/Blurt.svelte"
+	import Loader from "$lib/c/Loader.svelte"
+	import Processing from "$lib/c/Processing.svelte"
 
+	import type { PageData } from "./$types"
 	import { crossfade, fade } from "svelte/transition"
 	import { flip } from "svelte/animate"
-	import type { PageData } from "./$types"
-	const [send, receive] = crossfade({ duration: 200 })
+	import { toast } from "svelte-sonner"
+	import { page } from "$app/stores"
+	import { env } from "$env/dynamic/public"
 
 	export let data: PageData
+	export let userID: string | undefined = data.userID ?? "-1"
 	export let blurts = data.blurts ?? []
 
 	let blurt = ""
-	let username = ""
 	let initiating = true // loading initial Blurts
-	let loading = false // loading new set of Blurts via infinite scroll
+	let loading = false // loading new set of Blurts via "load more" click"
+
+	let countdownBox: HTMLDivElement
+
+	let conn: WebSocket
+
+	const likHandler = (blurt: BlurtType) => {
+		if (!conn) return false
+
+		conn.send(
+			JSON.stringify({
+				type: "lik",
+				payload: { blurtID: blurt.id, userID }
+			})
+		)
+
+		return true
+	}
+
+	const [send, receive] = crossfade({ duration: 200 })
+	setTimeout(() => (initiating = false), 350)
 
 	let processing = false // processing adding new Blurt
 
 	onMount(async () => {
-		// connect to websocket
-	})
+		conn = new WebSocket(`${env.PUBLIC_WS_ADDRESS}/ws`)
+		conn.onclose = () => toast.error("Connection closed.")
 
-	const path = $page.url.origin
+		conn.onmessage = function (evt) {
+			const data = JSON.parse(evt.data)
+
+			if (!data.success) {
+				toast.error(data.error)
+				return
+			}
+
+			if (data.payload.blurt) {
+				blurts = [data.payload.blurt, ...blurts]
+				return
+			}
+
+			if (data.payload.lik) {
+				const likdBlurt = blurts.find((blurt) => blurt.id === data.payload.lik.blurt_id)
+				if (!likdBlurt) return toast.error("Likd blurt not found.")
+
+				likdBlurt.edges.liks = [...(likdBlurt.edges.liks ?? []), data.payload.lik]
+
+				const likdBlurtSpot = blurts.findIndex((blurt) => blurt.id === data.payload.lik.blurt_id)
+				blurts = blurts.toSpliced(likdBlurtSpot, 1, likdBlurt)
+			}
+		}
+	})
 
 	const typeHandler = () => {
 		const remaining = 14 - blurt.length
 		const hue = (360 - 190) / remaining + 190
 		const saturation = (100 - 60) / remaining + 60
-		const countdownDiv = document.getElementById("countdown-box")
-		if (!countdownDiv) return
 
-		countdownDiv.style.color = `hsl(${hue}, ${saturation}%, 50%)`
-		countdownDiv.innerHTML = String(remaining)
+		countdownBox.style.color = `hsl(${hue}, ${saturation}%, 50%)`
+		countdownBox.innerHTML = String(remaining)
 	}
 
 	const submitHandler = async () => {
-		const countdownDiv = document.getElementById("countdown-box")
-		if (!countdownDiv) return
+		if (!conn) return
 
-		countdownDiv.style.color = `hsl(190, 60%, 50%)`
-		countdownDiv.textContent = ""
-	}
+		conn.send(
+			JSON.stringify({
+				type: "blurt",
+				payload: { content: blurt, userID }
+			})
+		)
 
-	const touchHandler = (e: TouchEvent) => {
-		let holderDiv = (e.target as HTMLDivElement).closest("div.blurt-holder") as HTMLDivElement
-		if (!holderDiv) return
-
-		holderDiv.style.transform = "scale(0.98)"
-	}
-
-	const touchEndHandler = (e: TouchEvent) => {
-		let holderDiv = (e.target as HTMLDivElement).closest("div.blurt-holder") as HTMLDivElement
-		if (!holderDiv) return
-
-		holderDiv.style.transform = "scale(1)"
-		holderDiv.style.boxShadow = ""
+		blurt = ""
 	}
 
 	// Function is called to load next set of Blurts by intersection observer.
@@ -121,7 +156,7 @@
 				style="will-change: transform;"
 				on:keyup={typeHandler}
 			/>
-			<div class="font-bold" style="color: hsl(190, 60%, 55%)" id="countdown-box">14</div>
+			<div class="font-bold" style="color: hsl(190, 60%, 55%)" bind:this={countdownBox}>14</div>
 		</div>
 		<button
 			type="submit"
@@ -138,23 +173,36 @@
 	<main id="blurt-zone">
 		{#each blurts as blurt (blurt.id)}
 			<div
-				on:touchstart={touchHandler}
-				on:touchend={touchEndHandler}
 				in:receive|global={{ key: blurt.id }}
 				out:send|global={{ key: blurt.id }}
 				animate:flip={{ duration: 400 }}
-				class="blurt-holder"
 			>
-				<Blurt {blurt} />
+				<Blurt {blurt} {likHandler} {userID} />
 			</div>
+		{:else}
+			<Blurt
+				{userID}
+				{likHandler}
+				blurt={{
+					id: "1",
+					author: "BlurtBot",
+					create_time: new Date("2022-01-01 01:01:01"),
+					content: "Blurtin",
+					liks: 420,
+					userLikd: false,
+					usersBlurt: false,
+					edges: {
+						author: {
+							id: "1",
+							username: "BlurtBot",
+							create_time: new Date("2022-01-01 01:01:01")
+						},
+						liks: undefined
+					}
+				}}
+			/>
 		{/each}
 		<Loader showing={loading} />
 	</main>
 	<div id="after-blurt" />
 </div>
-
-<style>
-	.blurt-holder {
-		transition: all 0.075s cubic-bezier(0.17, 0.67, 0.88, 4.06);
-	}
-</style>

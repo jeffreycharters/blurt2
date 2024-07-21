@@ -1,12 +1,19 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
+	"net/url"
 	"sync"
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/jeffreycharters/blurt/db"
+	"github.com/jeffreycharters/blurt/ent"
+	"github.com/jeffreycharters/blurt/ent/blurt"
+	"github.com/jeffreycharters/blurt/ent/user"
 )
 
 // Add more data to this type if needed
@@ -17,7 +24,7 @@ type client struct {
 
 var clients = make(map[*websocket.Conn]*client)
 var register = make(chan *websocket.Conn)
-var broadcast = make(chan string)
+var broadcast = make(chan []byte)
 var unregister = make(chan *websocket.Conn)
 
 func blurtHub() {
@@ -37,7 +44,7 @@ func blurtHub() {
 					if c.isClosing {
 						return
 					}
-					if err := connection.WriteMessage(websocket.TextMessage, []byte(message)); err != nil {
+					if err := connection.WriteMessage(websocket.TextMessage, message); err != nil {
 						c.isClosing = true
 						log.Println("write error:", err)
 
@@ -60,8 +67,42 @@ func blurtHub() {
 func main() {
 	app := fiber.New()
 
-	app.Get("/api/v1/test", func(c *fiber.Ctx) error {
-		return c.JSON("{ hello: hi}")
+	app.Use(cors.New())
+
+	client := db.Client()
+	defer client.Close()
+
+	app.Post("/api/v1/users/:username", func(c *fiber.Ctx) error {
+		username, err := url.QueryUnescape(c.Params("username"))
+		if err != nil {
+			return c.SendStatus(500)
+		}
+
+		user, err := client.User.Query().Where(user.Username(username)).First(context.Background())
+		if ent.IsNotFound(err) {
+			user, err = client.User.Create().SetUsername(username).Save(context.Background())
+			if err != nil {
+				return c.SendStatus(500)
+			}
+		} else if err != nil {
+			return c.SendStatus(500)
+		}
+
+		return c.JSON(user)
+	})
+
+	app.Get("/api/v1/blurts", func(c *fiber.Ctx) error {
+		blurts, err := client.Blurt.Query().
+			WithAuthor().
+			WithLiks().
+			Order(ent.Desc((blurt.FieldCreateTime))).
+			Limit(25).
+			All(context.Background())
+		if err != nil {
+			return c.SendStatus(500)
+		}
+
+		return c.JSON(blurts)
 	})
 
 	app.Use(func(c *fiber.Ctx) error {
@@ -95,7 +136,12 @@ func main() {
 
 			if messageType == websocket.TextMessage {
 				// Broadcast the received message
-				broadcast <- string(message)
+				ret, err := db.ParseMessage(message)
+				if err != nil {
+					c.WriteJSON(db.WrapError(err))
+					return
+				}
+				broadcast <- ret
 			} else {
 				log.Println("websocket message received of type", messageType)
 			}

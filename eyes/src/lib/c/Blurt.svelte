@@ -1,121 +1,93 @@
-<script>
-	import { onMount } from 'svelte';
-	import { fade } from 'svelte/transition';
-	export let blurt;
-	let users_blurt = false;
-	let username = '';
-	let likdBlurt = blurt.userLikd;
-	$: blurtLiks = blurt._count?.liks ?? 0;
-	let error = '';
+<script lang="ts">
+	import { fade } from "svelte/transition"
+	import type { Blurt } from "../../app"
+	import { displayDate } from "$lib"
 
-	let displayDate = '';
+	export let userID: string = ""
+	export let blurt: Blurt
+	export let likHandler: (blurt: Blurt) => boolean
 
-	onMount(() => {
-		username = localStorage.getItem('username');
-		users_blurt = username === blurt.user.username;
-		const date = new Date();
-		const blurtDate = new Date(blurt.created_at);
-		displayDate = getDisplayDate(blurtDate, date);
-	});
-	$: own_style = users_blurt ? 'bg-teal-50' : 'bg-white';
+	$: likdBlurt = blurt.edges.liks?.find((lik) => {
+		return lik.user_id === userID
+	})
+	$: blurtLiks = blurt.edges.liks?.length ?? 0
+	let error = ""
 
-	const getDisplayDate = (blurtDate, date) => {
-		const timeGap = date - blurtDate;
-		const fewSeconds = 1000 * 60;
-		const fewMinutes = 1000 * 60 * 15;
-		// const aboutHour = 1000 * 60 * 45;
-		const oneHour = 1000 * 60 * 60;
-		const hourish = 1000 * 60 * 90;
-		const coupleHours = 1000 * 60 * 180;
-		const oneDay = 1000 * 60 * 60 * 24;
-		if (timeGap < fewSeconds) {
-			return 'A few seconds ago.';
-		} else if (timeGap < fewMinutes) {
-			return 'A few minutes ago.';
-		} else if (timeGap < fewMinutes) {
-			return 'Less than an hour ago.';
-		} else if (timeGap < hourish) {
-			return 'About an hour ago.';
-		} else if (timeGap < coupleHours) {
-			return 'A couple of hours ago.';
-		} else if (timeGap < oneDay) {
-			return `About ${Math.ceil(timeGap / oneHour)} hours ago.`;
-		} else {
-			return blurt.date;
+	const touchHandler = (e: TouchEvent) => {
+		if (e.target) (e.currentTarget as HTMLDivElement).style.transform = "scale(0.98)"
+	}
+
+	const touchEndHandler = (e: TouchEvent) => {
+		if (e.target) {
+			const currDiv = e.currentTarget as HTMLDivElement
+
+			currDiv.style.transform = "scale(1)"
+			currDiv.style.boxShadow = ""
 		}
-	};
+	}
 
-	const likHandler = async () => {
-		blurtLiks += 1;
-		likdBlurt = true;
-		const res = await fetch(`/blurts/lik/${blurt.uid}`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({ uid: blurt.uid, username: username })
-		});
-		if (!res.ok) {
-			likdBlurt = false;
-			blurtLiks -= 1;
-			error = 'Shit! Trouble likking! Try lik later again.';
-			setTimeout(() => (error = ''), 5000);
-		}
-		return res;
-	};
+	const own_style = blurt.edges.author.id === userID ? "bg-teal-50" : "bg-white"
 </script>
 
-<article class="mt-2 mb-4 py-2 px-4 border-grey-50 border-solid border rounded-md {own_style}">
-	<div
-		class="text-teal-500 font-bold border-b-solid border-b border-b-gray-400 pl-2 tracking-wider pb-1"
-	>
-		{blurt.user.username}
-		<img src="verified.svg" alt="verified" class="h-4 inline relative" style="top: -2px;" />
-	</div>
-	<div
-		class="font-semibold text-teal-600 text-4xl pl-6 tracking-wider my-2"
-		style="font-family: 'Caveat Brush'"
-	>
-		{blurt.blurt}
-	</div>
-	<div class="flex justify-between items-baseline">
-		<div class="flex gap-4 items-baseline">
-			<div id="lik-box-{blurt.uid}" class="inline">
-				{#if likdBlurt}
-					<div
-						transition:fade|global
-						class="border-grey-200 rounded-md border px-4 shadow-sm hover:shadow-none font-bold tracking-wider bg-gray-50 text-slate-400 w-24 grayscale-[50%]"
-					>
-						<img
-							src="heart-icon.svg"
-							alt="heart"
-							class="h-4 inline relative p-0 -ml-1 mr-1"
-							style="top: -2px;"
-						/>Likd!
-					</div>
-				{:else}
-					<button
-						type="button"
-						on:click={likHandler}
-						class="text-teal-600 cursor-pointer border-grey-200 rounded-md border px-4 shadow-sm hover:shadow-none font-bold tracking-wider w-24 bg-white"
-						><img
-							src="heart-icon.svg"
-							alt="heart"
-							class="h-4 inline relative p-0 -ml-1 mr-1 "
-							style="top: -2px;"
-						/>Lik</button
-					>
-				{/if}
+<div on:touchstart={touchHandler} on:touchend={touchEndHandler} class="blurt-holder">
+	<article class="border-grey-50 mb-4 mt-2 rounded-md border border-solid px-4 py-2 {own_style}">
+		<div
+			class="border-b-solid border-b border-b-gray-400 pb-1 pl-2 font-bold tracking-wider text-teal-500"
+		>
+			{decodeURI(blurt.edges.author.username)}
+			<img src="verified.svg" alt="verified" class="relative inline h-4" style="top: -2px;" />
+		</div>
+		<div
+			class="my-2 pl-6 text-4xl font-semibold tracking-wider text-teal-600"
+			style="font-family: 'Caveat Brush'"
+		>
+			{blurt.content}
+		</div>
+		<div class="flex items-baseline justify-between">
+			<div class="flex items-baseline gap-4">
+				<div id="lik-box-{blurt.id}" class="inline">
+					{#if likdBlurt}
+						<div
+							transition:fade|global
+							class="border-grey-200 w-24 rounded-md border bg-gray-50 px-4 font-bold tracking-wider text-slate-400 shadow-sm grayscale-[50%] hover:shadow-none"
+						>
+							<img
+								src="heart-icon.svg"
+								alt="heart"
+								class="relative -ml-1 mr-1 inline h-4 p-0"
+								style="top: -2px;"
+							/>Likd!
+						</div>
+					{:else}
+						<button
+							type="button"
+							on:click={() => likHandler(blurt)}
+							class="border-grey-200 w-24 cursor-pointer rounded-md border bg-white px-4 font-bold tracking-wider text-teal-600 shadow-sm hover:shadow-none"
+							><img
+								src="heart-icon.svg"
+								alt="heart"
+								class="relative -ml-1 mr-1 inline h-4 p-0"
+								style="top: -2px;"
+							/>Lik</button
+						>
+					{/if}
+				</div>
+				<div class="font-bold text-teal-500">
+					{blurtLiks} lik{blurtLiks === 1 ? "" : "s"}
+				</div>
 			</div>
-			<div class="text-teal-500 font-bold">
-				{blurtLiks} lik
+			<div class="text-xs text-gray-400">
+				{displayDate(new Date(blurt.create_time), new Date())}
 			</div>
 		</div>
-		<div class="text-gray-400 text-xs">
-			{displayDate}
-		</div>
-	</div>
-	{#if error}
-		<div transition:fade|global class="text-sm mt-4 mx-4 text-red-600">{error}</div>
-	{/if}
-</article>
+		{#if error}
+			<div transition:fade|global class="mx-4 mt-4 text-sm text-red-600">{error}</div>
+		{/if}
+	</article>
+</div>
+
+<style>
+	.blurt-holder {
+		transition: all 0.075s cubic-bezier(0.17, 0.67, 0.88, 4.06);
+	}
+</style>

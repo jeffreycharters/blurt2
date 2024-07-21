@@ -13,19 +13,24 @@ declare global {
 export type User = {
 	id: Uuid
 	username: string
-	createdAt: Date
+	create_time: Date
 }
 
 export type Blurt = {
 	id: Uuid
-	user: Uuid
-	created: Date
+	author: string
+	create_time: Date
 	content: string
-	liks: User[]
+	liks: number
+	userLikd: boolean
+	usersBlurt: boolean
+	edges: {
+		author: User
+		liks: Lik[] | undefined
+	}
 }
 
 export type Lik = {
-	user: Uuid
-	blurt: Uuid
-	created: Date
+	user_id: Uuid
+	blurt_id: Uuid
 }
