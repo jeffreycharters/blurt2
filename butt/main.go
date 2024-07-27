@@ -5,6 +5,7 @@ import (
 	"flag"
 	"log"
 	"net/url"
+	"strconv"
 	"sync"
 
 	"github.com/gofiber/contrib/websocket"
@@ -35,7 +36,7 @@ func blurtHub() {
 			log.Println("connection registered")
 
 		case message := <-broadcast:
-			log.Println("message received:", message)
+			log.Println("message broadcasting:", string(message))
 			// Send the message to all clients
 			for connection, c := range clients {
 				go func(connection *websocket.Conn, c *client) { // send to each client in parallel so we don't block on a slow client
@@ -92,11 +93,24 @@ func main() {
 	})
 
 	app.Get("/api/v1/blurts", func(c *fiber.Ctx) error {
+		offset, err := strconv.Atoi(c.Query("offset", "0"))
+		if err != nil {
+			offset = 0
+		}
+
+		loadCount, err := strconv.Atoi(c.Query("count", "25"))
+		if err != nil {
+			loadCount = 25
+		}
+
+		log.Println("offset:", offset, "loadCount:", loadCount)
+
 		blurts, err := client.Blurt.Query().
 			WithAuthor().
 			WithLiks().
 			Order(ent.Desc((blurt.FieldCreateTime))).
-			Limit(25).
+			Offset(offset).
+			Limit(loadCount).
 			All(context.Background())
 		if err != nil {
 			return c.SendStatus(500)

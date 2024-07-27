@@ -83,7 +83,7 @@ func ParseMessage(message []byte) ([]byte, error) {
 	case Blurt:
 		userID, err := uuid.Parse(msg.Payload["userID"].(string))
 		if err != nil {
-			return nil, errors.New("invalid userID")
+			return nil, errors.New("invalid blurt userID")
 		}
 
 		blurt, err := addBlurt(msg.Payload["content"].(string), userID)
@@ -98,11 +98,11 @@ func ParseMessage(message []byte) ([]byte, error) {
 	case Lik:
 		userID, err := uuid.Parse(msg.Payload["userID"].(string))
 		if err != nil {
-			return nil, errors.New("invalid userID")
+			return nil, errors.New("invalid lik userID")
 		}
 		blurtID, err := uuid.Parse(msg.Payload["blurtID"].(string))
 		if err != nil {
-			return nil, errors.New("invalid blurtID")
+			return nil, errors.New("invalid lik blurtID")
 		}
 		lik, err := Client().Lik.Create().
 			SetUserID(userID).
