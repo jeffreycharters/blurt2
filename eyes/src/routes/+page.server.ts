@@ -4,7 +4,7 @@ import { message, superValidate } from "sveltekit-superforms"
 import { zod } from "sveltekit-superforms/adapters"
 import { fail, redirect } from "@sveltejs/kit"
 import type { User } from "../app"
-import { env } from "$env/dynamic/public"
+import { env } from "$env/dynamic/private"
 
 const schema = z.object({
 	username: z
@@ -28,7 +28,7 @@ export const actions = {
 		let res: Response
 
 		try {
-			res = await fetch(`${env.PUBLIC_API_ADDRESS}/api/v1/users/${form.data.username}`, {
+			res = await fetch(`${env.API_ADDRESS}/api/v1/users/${form.data.username}`, {
 				method: "POST"
 			})
 		} catch (err) {

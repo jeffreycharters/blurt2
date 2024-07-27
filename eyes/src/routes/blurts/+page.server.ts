@@ -1,7 +1,7 @@
 import { fail, redirect } from "@sveltejs/kit"
 import type { Blurt } from "../../app"
 import type { PageServerLoad } from "./$types"
-import { env } from "$env/dynamic/public"
+import { env } from "$env/dynamic/private"
 
 export const load = (async ({ cookies }) => {
 	const userID = cookies.get("userID")
@@ -11,7 +11,7 @@ export const load = (async ({ cookies }) => {
 	let res: Response
 
 	try {
-		res = await fetch(`${env.PUBLIC_API_ADDRESS}/api/v1/blurts`)
+		res = await fetch(`${env.API_ADDRESS}/api/v1/blurts`)
 	} catch (err) {
 		return fail(500, { error: "Could not fetch blurts" })
 	}
