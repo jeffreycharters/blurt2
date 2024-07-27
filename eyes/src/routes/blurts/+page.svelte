@@ -107,9 +107,7 @@
 
 			let res: Response
 			try {
-				res = await fetch(
-					`${env.PUBLIC_API_ADDRESS}/api/v1/blurts?offset=${loadOffset}&count=${loadCount}`
-				)
+				res = await fetch(`api/blurts?offset=${loadOffset}&count=${loadCount}`)
 			} catch (err) {
 				console.error(err)
 				return toast.error("Failed to get mor blurts!")

@@ -98,19 +98,19 @@ func main() {
 			offset = 0
 		}
 
-		loadCount, err := strconv.Atoi(c.Query("count", "25"))
+		count, err := strconv.Atoi(c.Query("count", "25"))
 		if err != nil {
-			loadCount = 25
+			count = 25
 		}
 
-		log.Println("offset:", offset, "loadCount:", loadCount)
+		log.Println("offset:", offset, "loadCount:", count)
 
 		blurts, err := client.Blurt.Query().
 			WithAuthor().
 			WithLiks().
 			Order(ent.Desc((blurt.FieldCreateTime))).
 			Offset(offset).
-			Limit(loadCount).
+			Limit(count).
 			All(context.Background())
 		if err != nil {
 			return c.SendStatus(500)
