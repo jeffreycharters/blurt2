@@ -10,8 +10,8 @@
 	import { crossfade, fade } from "svelte/transition"
 	import { flip } from "svelte/animate"
 	import { toast } from "svelte-sonner"
-	import { page } from "$app/stores"
 	import { env } from "$env/dynamic/public"
+	import { cubicInOut } from "svelte/easing"
 
 	export let data: PageData
 	export let userID: string | undefined = data.userID ?? "-1"
@@ -22,6 +22,11 @@
 	let loading = false // loading new set of Blurts via "load more" click"
 
 	let countdownBox: HTMLDivElement
+	let loadBlurtBox: HTMLDivElement
+
+	let loadableBlurts = true
+	const loadCount = 25 // how mant blurts to load at a time
+	let loadOffset = loadCount // how many blurts have been loaded
 
 	let conn: WebSocket
 
@@ -44,20 +49,21 @@
 	let processing = false // processing adding new Blurt
 
 	onMount(async () => {
+		const observerOptions = { root: null, rootMargin: "0px" }
+		const intersectionObserver = new IntersectionObserver(loadHandler, observerOptions)
+		intersectionObserver.observe(loadBlurtBox)
+
 		conn = new WebSocket(`${env.PUBLIC_WS_ADDRESS}/ws`)
 		conn.onclose = () => toast.error("Connection closed.")
 
 		conn.onmessage = function (evt) {
 			const data = JSON.parse(evt.data)
-
 			if (!data.success) {
-				toast.error(data.error)
-				return
+				return toast.error(data.error)
 			}
 
 			if (data.payload.blurt) {
-				blurts = [data.payload.blurt, ...blurts]
-				return
+				return (blurts = [data.payload.blurt, ...blurts])
 			}
 
 			if (data.payload.lik) {
@@ -72,7 +78,7 @@
 		}
 	})
 
-	const typeHandler = () => {
+	function typeHandler() {
 		const remaining = 14 - blurt.length
 		const hue = (360 - 190) / remaining + 190
 		const saturation = (100 - 60) / remaining + 60
@@ -81,7 +87,7 @@
 		countdownBox.innerHTML = String(remaining)
 	}
 
-	const submitHandler = async () => {
+	async function submitHandler() {
 		if (!conn) return
 
 		conn.send(
@@ -92,44 +98,36 @@
 		)
 
 		blurt = ""
+		typeHandler()
 	}
 
-	// Function is called to load next set of Blurts by intersection observer.
-	// const loadMoreBlurts = async (entries) => {
-	// 	entries.forEach(async (e) => {
-	// 		if (e.isIntersecting) {
-	// 			const loadTimer = setTimeout(() => (loading = true), 500)
-	// 			const path = $page.url.origin
-	// 			const count = 25
-	// 			const url = `${path}/blurts.json?username=${encodeURIComponent(
-	// 				username
-	// 			)}&take=${count}&cursor=${displayBlurts[displayBlurts.length - 1].uid}`
-	// 			const res = await fetch(url)
-	// 			if (res.status === 404) {
-	// 				document.getElementById("after-blurt").remove()
-	// 				return
-	// 			}
-	// 			const rawBlurts = await res.json()
-	// 			const dateBlurts = humanizeDates(rawBlurts)
-	// 			blurts.set([...displayBlurts, ...dateBlurts])
-	// 			clearTimeout(loadTimer)
-	// 			loading = false
-	// 		}
-	// 	})
-	// }
+	async function loadHandler(entries: IntersectionObserverEntry[]) {
+		if (entries[0].isIntersecting) {
+			loading = true
 
-	// if (browser) {
-	// 	setTimeout(() => {
-	// 		const options = {
-	// 			root: null,
-	// 			rootMargin: "0px 0px 0px 0px",
-	// 			threshold: 1.0
-	// 		}
-	// 		let observer = new IntersectionObserver(loadMoreBlurts, options)
-	// 		let target = document.getElementById("after-blurt")
-	// 		observer.observe(target)
-	// 	}, 1000)
-	// }
+			let res: Response
+			try {
+				res = await fetch(
+					`${env.PUBLIC_API_ADDRESS}/api/v1/blurts?offset=${loadOffset}&count=${loadCount}`
+				)
+			} catch (err) {
+				console.error(err)
+				return toast.error("Failed to get mor blurts!")
+			}
+
+			if (!res.ok) return toast.error("Failed to get mor blurts!")
+
+			setTimeout(async () => {
+				const newBlurts = (await res.json()) as BlurtType[]
+				loadOffset += newBlurts.length
+				if (newBlurts.length === 0) {
+					loadableBlurts = false
+				}
+				blurts = [...blurts, ...newBlurts]
+				loading = false
+			}, 1000)
+		}
+	}
 </script>
 
 {#if initiating}
@@ -175,7 +173,7 @@
 			<div
 				in:receive|global={{ key: blurt.id }}
 				out:send|global={{ key: blurt.id }}
-				animate:flip={{ duration: 400 }}
+				animate:flip={{ duration: 400, easing: cubicInOut }}
 			>
 				<Blurt {blurt} {likHandler} {userID} />
 			</div>
@@ -202,7 +200,18 @@
 				}}
 			/>
 		{/each}
-		<Loader showing={loading} />
 	</main>
-	<div id="after-blurt" />
+
+	{#if loadableBlurts}
+		<div bind:this={loadBlurtBox} class="h-4" />
+	{:else}
+		<div class="flex justify-center gap-2 font-bold text-teal-600">
+			<img src="cactus.svg" alt="cactus" class="relative inline h-16" />
+			<div class="flex flex-col items-start justify-center">
+				<div>No more blurts!</div>
+				<div>You win!</div>
+			</div>
+		</div>
+	{/if}
+	<Loader showing={loading} />
 </div>
