@@ -9,7 +9,7 @@
 	import type { PageData } from "./$types"
 	import { crossfade, fade } from "svelte/transition"
 	import { flip } from "svelte/animate"
-	import { toast } from "svelte-sonner"
+	import { toast, Toaster } from "svelte-sonner"
 	import { env } from "$env/dynamic/public"
 	import { cubicInOut } from "svelte/easing"
 
@@ -28,7 +28,56 @@
 	const loadCount = 25 // how mant blurts to load at a time
 	let loadOffset = loadCount // how many blurts have been loaded
 
-	let conn: WebSocket
+	let userCount = 1
+
+	let conn: WebSocket | null
+	let reconnectDelay: number
+	let status = false
+
+	function websocketConnect() {
+		conn = new WebSocket(`${env.PUBLIC_WS_ADDRESS}/ws`)
+
+		conn.onopen = function () {
+			reconnectDelay = 100
+			status = true
+		}
+
+		conn.onclose = function () {
+			status = false
+			if (conn) conn = null
+			toast.error("Unconnected from BlurtHQ! Reconnecting...")
+
+			setTimeout(() => {
+				websocketConnect()
+				reconnectDelay = reconnectDelay * 2 ?? 100
+			}, reconnectDelay)
+		}
+
+		conn.onmessage = function (evt) {
+			const data = JSON.parse(evt.data)
+			if (!data.success) {
+				return toast.error(data.error)
+			}
+
+			if (data.payload.blurt) {
+				return (blurts = [data.payload.blurt, ...blurts])
+			}
+
+			if (data.payload.lik) {
+				const likdBlurt = blurts.find((blurt) => blurt.id === data.payload.lik.blurt_id)
+				if (!likdBlurt) return toast.error("Likd blurt not found.")
+
+				likdBlurt.edges.liks = [...(likdBlurt.edges.liks ?? []), data.payload.lik]
+
+				const likdBlurtSpot = blurts.findIndex((blurt) => blurt.id === data.payload.lik.blurt_id)
+				blurts = blurts.toSpliced(likdBlurtSpot, 1, likdBlurt)
+			}
+
+			if (data.payload.userCount) {
+				userCount = data.payload.userCount
+			}
+		}
+	}
 
 	const likHandler = (blurt: BlurtType) => {
 		if (!conn) return false
@@ -53,29 +102,7 @@
 		const intersectionObserver = new IntersectionObserver(loadHandler, observerOptions)
 		intersectionObserver.observe(loadBlurtBox)
 
-		conn = new WebSocket(`${env.PUBLIC_WS_ADDRESS}/ws`)
-		conn.onclose = () => toast.error("Connection closed.")
-
-		conn.onmessage = function (evt) {
-			const data = JSON.parse(evt.data)
-			if (!data.success) {
-				return toast.error(data.error)
-			}
-
-			if (data.payload.blurt) {
-				return (blurts = [data.payload.blurt, ...blurts])
-			}
-
-			if (data.payload.lik) {
-				const likdBlurt = blurts.find((blurt) => blurt.id === data.payload.lik.blurt_id)
-				if (!likdBlurt) return toast.error("Likd blurt not found.")
-
-				likdBlurt.edges.liks = [...(likdBlurt.edges.liks ?? []), data.payload.lik]
-
-				const likdBlurtSpot = blurts.findIndex((blurt) => blurt.id === data.payload.lik.blurt_id)
-				blurts = blurts.toSpliced(likdBlurtSpot, 1, likdBlurt)
-			}
-		}
+		websocketConnect()
 	})
 
 	function typeHandler() {
@@ -123,10 +150,12 @@
 				}
 				blurts = [...blurts, ...newBlurts]
 				loading = false
-			}, 1000)
+			}, 750)
 		}
 	}
 </script>
+
+<Toaster expand={true} richColors />
 
 {#if initiating}
 	<div
@@ -154,6 +183,7 @@
 			/>
 			<div class="font-bold" style="color: hsl(190, 60%, 55%)" bind:this={countdownBox}>14</div>
 		</div>
+
 		<button
 			type="submit"
 			id="blurt-button"
@@ -161,6 +191,23 @@
 			>blurt it</button
 		>
 	</form>
+
+	<div
+		class="mt-2 flex w-full items-center justify-evenly gap-1 rounded bg-slate-100 p-2 text-sm font-bold text-slate-500"
+	>
+		<div>{userCount} chillin'</div>
+		<div class="flex items-center gap-1">
+			{#if status}
+				<div class="mt-[1px] h-2 w-2 rounded-full border border-slate-400 bg-green-500" />
+				<span>cunnekted</span>
+			{:else}
+				<div class="flex items-center gap-1 rounded bg-slate-200 px-2 py-1">
+					<div class="mt-[1px] h-2 w-2 rounded-full border border-slate-400 bg-red-500" />
+					<button on:click={websocketConnect}>rekinect!</button>
+				</div>
+			{/if}
+		</div>
+	</div>
 
 	{#if processing}
 		<Processing text="Blurting!" />

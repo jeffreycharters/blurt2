@@ -6,64 +6,16 @@ import (
 	"log"
 	"net/url"
 	"strconv"
-	"sync"
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/jeffreycharters/blurt/db"
 	"github.com/jeffreycharters/blurt/ent"
 	"github.com/jeffreycharters/blurt/ent/blurt"
 	"github.com/jeffreycharters/blurt/ent/user"
+	"github.com/jeffreycharters/blurt/internal/db"
+	"github.com/jeffreycharters/blurt/internal/ws"
 )
-
-// Add more data to this type if needed
-type client struct {
-	isClosing bool
-	mu        sync.Mutex
-}
-
-var clients = make(map[*websocket.Conn]*client)
-var register = make(chan *websocket.Conn)
-var broadcast = make(chan []byte)
-var unregister = make(chan *websocket.Conn)
-
-func blurtHub() {
-	for {
-		select {
-		case connection := <-register:
-			clients[connection] = &client{}
-			log.Println("connection registered")
-
-		case message := <-broadcast:
-			log.Println("message broadcasting:", string(message))
-			// Send the message to all clients
-			for connection, c := range clients {
-				go func(connection *websocket.Conn, c *client) { // send to each client in parallel so we don't block on a slow client
-					c.mu.Lock()
-					defer c.mu.Unlock()
-					if c.isClosing {
-						return
-					}
-					if err := connection.WriteMessage(websocket.TextMessage, message); err != nil {
-						c.isClosing = true
-						log.Println("write error:", err)
-
-						connection.WriteMessage(websocket.CloseMessage, []byte{})
-						connection.Close()
-						unregister <- connection
-					}
-				}(connection, c)
-			}
-
-		case connection := <-unregister:
-			// Remove the client from the hub
-			delete(clients, connection)
-
-			log.Println("connection unregistered")
-		}
-	}
-}
 
 func main() {
 	app := fiber.New()
@@ -103,8 +55,6 @@ func main() {
 			count = 25
 		}
 
-		log.Println("offset:", offset, "loadCount:", count)
-
 		blurts, err := client.Blurt.Query().
 			WithAuthor().
 			WithLiks().
@@ -126,17 +76,17 @@ func main() {
 		return c.SendStatus(fiber.StatusUpgradeRequired)
 	})
 
-	go blurtHub()
+	go ws.BlurtHub()
 
 	app.Get("/ws", websocket.New(func(c *websocket.Conn) {
 		// When the function returns, unregister the client and close the connection
 		defer func() {
-			unregister <- c
+			ws.Unregister <- c
 			c.Close()
 		}()
 
 		// Register the client
-		register <- c
+		ws.Register <- c
 
 		for {
 			messageType, message, err := c.ReadMessage()
@@ -155,7 +105,7 @@ func main() {
 					c.WriteJSON(db.WrapError(err))
 					return
 				}
-				broadcast <- ret
+				ws.Broadcast <- ret
 			} else {
 				log.Println("websocket message received of type", messageType)
 			}
